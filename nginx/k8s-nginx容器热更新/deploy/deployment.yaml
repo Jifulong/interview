@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      name: nginx
+      labels:
+        app: nginx
+    spec:
+      # 需打开共享进程命名空间特性
+      shareProcessNamespace: true
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: nginx-config
+        - name: ai-config
+          configMap:
+            name: download-config
+        - name: mongodb-efs-data
+          hostPath:
+            # 宿主上目录位置
+            path: /mnt/data-s3-fs/mongodb-efs
+            #type: Directory
+      containers:
+        - name: nginx
+          image: nginx
+          ports:
+            - name: http
+              containerPort: 80
+            - name: https
+              containerPort: 443
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: ai-config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+            - name: mongodb-efs-data
+              mountPath: /tmp
+              readOnly: true
+        - name: nginx-reloader
+          image: /danqing/nginx-reloader:20250806
+          env:
+            - name: WATCH_NGINX_CONF_PATH
+              value: /etc/nginx/conf.d
+          volumeMounts:
+            - name: ai-config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: test
+spec:
+  selector:
+    app: nginx
+  type: NodePort
+  ports:
+    - name: http
+      port: 80
+      nodePort: 32080
